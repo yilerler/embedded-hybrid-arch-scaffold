@@ -1,4 +1,3 @@
-# project
 graph TD
     A[開始學習 GitHub] --> B{建立帳號}
     B --> C[開立第一個 Repo]
