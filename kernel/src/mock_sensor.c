@@ -32,24 +32,35 @@ static void mock_hardware_timer_func(struct timer_list *t) {
     int noise;
 
     mutex_lock(&dev->lock);
+    
+    // 產生一點雜訊
+    noise = (int)(jiffies % 5);
 
-    // 模擬一點雜訊 (基於 jiffies 的偽隨機)
-    noise = (int)(jiffies % 5); 
-
+    // --- 1. 物理現象模擬邏輯 ---
     if (dev->direction == 0) { 
-        // 正在遠離 (變大)
+        // 遠離中
         dev->data.distance_mm += (15 + noise);
         if (dev->data.distance_mm >= 400) {
             dev->data.distance_mm = 400;
-            dev->direction = 1; // 撞牆，開始折返
+            dev->direction = 1; // 折返
         }
     } else {
-        // 正在靠近 (變小)
+        // 靠近中
         dev->data.distance_mm -= (15 + noise);
-        if (dev->data.distance_mm <= 5) { // 模擬真的很近！
+        if (dev->data.distance_mm <= 5) {
             dev->data.distance_mm = 5;
-            dev->direction = 0; // 撞牆，開始折返
+            dev->direction = 0; // 折返
         }
+    }
+
+    // --- 2. 保命急停邏輯 ---
+    if (dev->data.distance_mm < 10) {
+        dev->data.status_code = STATUS_EMERGENCY_STOP; // 狀態碼設為 1
+        
+        // 模擬硬體瞬間斷電！
+        printk(KERN_EMERG "Mock Sensor: [SAFETY CRITICAL] Distance < 10mm! MOTOR STOPPED!\n");
+    } else {
+        dev->data.status_code = STATUS_NORMAL; // 狀態碼設為 0
     }
 
     dev->data.timestamp = jiffies;
@@ -63,8 +74,8 @@ static void mock_hardware_timer_func(struct timer_list *t) {
 // --- IOCTL Function ---
 static long mock_sensor_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     struct mock_sensor_dev *dev = file->private_data;
-    // 修正：刪除原本這裡沒用到的 struct sensor_data user_data;
     int ret = 0;
+    int new_dist;
 
     mutex_lock(&dev->lock);
     switch (cmd) {
@@ -73,6 +84,17 @@ static long mock_sensor_ioctl(struct file *file, unsigned int cmd, unsigned long
                 ret = -EFAULT;
             }
             break;
+            
+        // 新增：手動設定距離 (這是為了測試！)
+        case IOCTL_SET_MOCK_DISTANCE:
+            if (copy_from_user(&new_dist, (int *)arg, sizeof(int))) {
+                ret = -EFAULT;
+            } else {
+                dev->data.distance_mm = new_dist;
+                printk(KERN_INFO "Mock Sensor: Manual distance set to %dmm\n", new_dist);
+            }
+            break;
+
         default:
             ret = -EINVAL;
     }
