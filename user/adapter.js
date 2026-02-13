@@ -57,45 +57,78 @@ try {
     process.exit(1);
 }
 
-// --- 4. 業務迴圈 (Business Loop) ---
-// 這是二樓(User Space) 的大腦
-// 每 500ms 去問一次一樓：「現在距離多少？」
-const buffer = Buffer.alloc(DATA_SIZE); // 準備一個 12 bytes 的空箱子
+// --- 定義指令 ---
+const IOCTL_SET_MOCK_DISTANCE = _IOR(SENSOR_MAGIC, 2, 4); // 保留這個定義，雖然我們這回合沒用到，但它是合約的一部分
+
+// 準備一個 12 bytes 的空箱子 (保留)
+const buffer = Buffer.alloc(DATA_SIZE); 
+
+// --- 模擬次要感測器 (User Space 的業務邏輯) ---
+function readAirQuality() {
+    return Math.floor(Math.random() * 40) + 10; // PM2.5 (10~50)
+}
+
+function readNoiseLevel() {
+    return Math.floor(Math.random() * 50) + 40; // 噪音 (40~90dB)
+}
+
+function readRFID() {
+    if (Math.random() > 0.9) { // 10% 機率有人刷卡
+        return `CARD_${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+    }
+    return "NO_CARD";
+}
+
+// --- 4. 業務迴圈 (Business Loop) 系統狀態聚合 (System Aggregation) ---
 
 setInterval(() => {
     try {
-        // 發送指令！
-        // 箱子(buffer) 傳進去，Kernel 把數據填滿，然後傳回來
+        // 1. 讀取高優先級 Kernel 數據 (電子圍籬)
         const ret = ioctl(fd, IOCTL_GET_DATA, buffer);
+        let fenceData = null;
 
         if (ret === 0) {
-            // 解析數據 (Unmarshalling)
-            // C 語言是 Little Endian (低位元在先)
-            const timestamp = buffer.readUInt32LE(0);
-            const distance = buffer.readInt32LE(4);
-            const status = buffer.readInt32LE(8);
-
-            // 這裡就是「防腐層」的作用：把 Buffer 轉成漂亮的 JSON
-            const sensorObj = {
-                t: timestamp,
-                dist: distance,
-                st: status,
-                unit: 'mm'
+            fenceData = {
+                distance_mm: buffer.readInt32LE(4),
+                status: buffer.readInt32LE(8) === 1 ? "EMERGENCY_STOP" : "NORMAL"
             };
-
-            // 模擬業務邏輯：如果距離太近，發出警告
-            if (sensorObj.dist < 50) {
-                console.warn(`[WARNING] Too Close! Distance: ${sensorObj.dist}mm`);
-            } else {
-                console.log(`[INFO] Sensor Data:`, sensorObj);
-            }
         }
-    } catch (e) {
-        console.error(`[Error] IOCTL failed:`, e.message);
-    }
-}, 500); // 500ms 採樣一次
 
-// 優雅退出 (Graceful Shutdown)
+        // 2. 讀取低優先級 User Space 數據 (空品、噪音、門禁)
+        const airQuality = readAirQuality();
+        const noiseLevel = readNoiseLevel();
+        const accessCard = readRFID();
+
+        // 3. 聚合成最終的戰情板 JSON (IoT Payload)
+        const systemPayload = {
+            timestamp: new Date().toISOString(),
+            safety_subsystem: fenceData,
+            environment_subsystem: {
+                pm25: airQuality,
+                noise_db: noiseLevel
+            },
+            access_subsystem: {
+                last_scan: accessCard
+            }
+        };
+
+        // 4. 業務邏輯輸出 (取代了原本單純的 console.log)
+        console.log(`\n[AGGREGATOR] Publishing System State:`);
+        console.dir(systemPayload, { depth: null, colors: true });
+
+        // 依據打包好的數據，做出業務反應
+        if (fenceData && fenceData.status === "EMERGENCY_STOP") {
+            console.error(`🚨 [ALARM] SYSTEM TRIGGERED SIREN! MOTOR OFFLINE!`);
+        } else if (accessCard !== "NO_CARD") {
+            console.log(`🔑 [ACCESS] Processing login for ${accessCard}...`);
+        }
+
+    } catch (e) {
+        console.error(`[Error] Aggregation failed:`, e.message);
+    }
+}, 1000); // 1秒更新一次戰情板數據
+
+// 優雅退出 (保留)
 process.on('SIGINT', () => {
     console.log('\n[System] Closing device...');
     fs.closeSync(fd);
