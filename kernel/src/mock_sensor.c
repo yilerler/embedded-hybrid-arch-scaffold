@@ -18,8 +18,9 @@ struct mock_sensor_dev {
     struct timer_list timer;
     struct sensor_data data;
     int is_active;
-    struct class *dev_class;     // 新增：儲存類別指標
-    struct device *dev_device;   // 新增：儲存裝置指標
+    struct class *dev_class;
+    struct device *dev_device;
+    int direction; // 新增：0 = 遠離中, 1 = 靠近中
 };
 
 static dev_t dev_num;
@@ -28,11 +29,29 @@ static struct mock_sensor_dev *my_dev;
 // --- Timer Function ---
 static void mock_hardware_timer_func(struct timer_list *t) {
     struct mock_sensor_dev *dev = from_timer(dev, t, timer);
+    int noise;
 
     mutex_lock(&dev->lock);
-    // 模擬數據變化
-    dev->data.distance_mm = (dev->data.distance_mm + 10) % 400;
-    if (dev->data.distance_mm < 10) dev->data.distance_mm = 10;
+
+    // 模擬一點雜訊 (基於 jiffies 的偽隨機)
+    noise = (int)(jiffies % 5); 
+
+    if (dev->direction == 0) { 
+        // 正在遠離 (變大)
+        dev->data.distance_mm += (15 + noise);
+        if (dev->data.distance_mm >= 400) {
+            dev->data.distance_mm = 400;
+            dev->direction = 1; // 撞牆，開始折返
+        }
+    } else {
+        // 正在靠近 (變小)
+        dev->data.distance_mm -= (15 + noise);
+        if (dev->data.distance_mm <= 5) { // 模擬真的很近！
+            dev->data.distance_mm = 5;
+            dev->direction = 0; // 撞牆，開始折返
+        }
+    }
+
     dev->data.timestamp = jiffies;
     mutex_unlock(&dev->lock);
 
@@ -119,6 +138,7 @@ static int __init mock_sensor_init(void) {
 
     // 3. 啟動 Timer
     my_dev->is_active = 1;
+    my_dev->direction = 0; // 預設往外跑
     my_dev->data.distance_mm = 100;
     mod_timer(&my_dev->timer, jiffies + msecs_to_jiffies(100));
 
