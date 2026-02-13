@@ -1,26 +1,57 @@
-# ADR-001: Hybrid Architecture for Safety-Critical Edge Systems
+# 🚀 Embedded Hybrid Architecture Scaffold (嵌入式異質架構整合骨架)
 
-## 1. 狀態 (Status)
-已接受 (Accepted)
+> **一句話簡介：** 專為高可靠度 IoT 邊緣閘道器 (Edge Gateway) 設計的系統骨架。透過分離 Linux Kernel Space (硬即時控制) 與 User Space (業務邏輯)，解決傳統單一腳本控制硬體時缺乏確定性 (Determinism) 與故障隔離 (Fail-Safe) 的致命痛點。
 
-## 2. 背景與問題 (Context)
-本專案的「電子圍籬系統」涉及馬達的緊急停止（Emergency Stop），屬於安全關鍵 (Safety-Critical) 任務。
-起初評估使用單一語言（如 Node.js 或 Python）在 User Space 直接透過 GPIO 控制硬體。
-然而，Node.js 運行在非即時 (Non-Real-Time) 的 Linux 作業系統上，會面臨以下風險：
-* **Context Switch 延遲：** 當系統正在處理高負載任務（如戰情板 WebSocket 傳輸）時，讀取感測器的執行緒可能被 OS 暫停。
-* **Garbage Collection 卡頓：** 程式清理記憶體時會產生不可預測的延遲 (Jitter)。
-* **單點故障 (SPOF)：** 如果 Node.js 因為某個未捕獲的例外 (Unhandled Exception) 崩潰，馬達將失去控制。
+## 🏗️ 系統架構 (System Architecture)
 
-## 3. 決策 (Decision)
-我們決定採用「異質架構整合 (Hybrid Architecture Integration)」：
-1. **底層 (Kernel Space):** 開發 Linux Kernel Module (`mock_sensor.c`)。利用 Kernel Timer 提供確定性 (Deterministic) 的感測器採樣，並將「距離過近強制斷電」的保命邏輯封裝在此層。
-2. **上層 (User Space):** 使用 Node.js (`adapter.js`) 負責非即時的業務邏輯（如資料聚合、雲端通訊、門禁比對）。
-3. **介面 (Interface):** 雙方透過定義嚴謹的 `ioctl` 系統呼叫進行通訊。
+本專案採用三層式異質運算架構：
 
-## 4. 後果 (Consequences)
-* **優點 (Positive):**
-  * **工安級故障隔離 (Fail-Safe):** 即使 Node.js 崩潰，Kernel Module 依然能獨立維持電子圍籬的急停機制。
-  * **解耦 (Decoupling):** 上層業務邏輯與底層硬體控制完全分離，方便未來替換真實硬體（目前使用 Mock 驗證）。
-* **缺點/妥協 (Negative):**
-  * 開發複雜度提升，需要維護 C 語言的 Kernel Code 與 JavaScript。
-  * 需要透過 `ioctl` 跨界傳遞資料，需處理指標與記憶體安全問題。
+1. **L1 / 核心控制層 (Kernel Space - C 語言):**
+   * 負責硬即時任務（如：電子圍籬感測、馬達強制斷電）。
+   * 具備 **Fail-Safe** 獨立運作能力，不受上層系統負載影響。
+2. **L2 / 業務邏輯層 (User Space - Node.js):**
+   * 透過 `ioctl` 介面與底層通訊。
+   * 負責非即時任務（如：空品/噪音監測、門禁 RFID 驗證）。
+   * 擔任資料聚合器 (Data Aggregator)，打包系統狀態。
+3. **L3 / 雲端戰情層 (Cloud Space):**
+   * 接收結構化的 JSON Payload，渲染監控儀表板。
+
+## ✨ 核心工程價值 (Key Features)
+
+* 🛡️ **工安級隔離 (Safety-Critical Isolation):** 保命邏輯直接在 Kernel Timer 內反射觸發，實作零延遲的硬體防護。
+* ⏱️ **確定性採樣 (Deterministic Sampling):** 擺脫 OS 排程帶來的 Jitter，確保底層每 100ms 絕對執行一次感測。
+* 🔌 **軟體定義硬體 (Software-Defined Hardware):** 嚴格定義 `sensor_ioctl.h` 合約，使邏輯層與物理硬體完全脫鉤。
+* 🚀 **虛擬化開發 (Mock-Driven Development):** 內建硬體模擬器，無須連接真實硬體即可進行架構驗證。
+
+## 📂 專案結構 (Directory Structure)
+
+\`\`\`text
+.
+├── decisions/          # 架構決策紀錄 (ADR)
+├── kernel/             # Linux LKM 驅動原始碼
+│   ├── include/        # 跨層共享的 IOCTL 合約定義
+│   └── src/            # mock_sensor.c (保命機制與虛擬硬體)
+└── user/               # Node.js 邊緣運算層
+    └── adapter.js      # 系統資料聚合與 API 轉發
+\`\`\`
+
+## 🚀 快速啟動 (Getting Started)
+
+**1. 編譯與載入核心模組 (Kernel Space)**
+\`\`\`bash
+cd kernel
+make
+sudo insmod src/mock_sensor.ko
+dmesg | tail # 驗證驅動是否存活
+\`\`\`
+
+**2. 啟動邊緣聚合器 (User Space)**
+\`\`\`bash
+cd user
+npm install
+sudo node adapter.js
+\`\`\`
+
+## 📜 架構決策紀錄 (ADR)
+詳細的系統設計與技術選型考量，請參閱：
+* [ADR-001: Hybrid Architecture for Safety-Critical Edge Systems](./decisions/ADR-001.md)
