@@ -25,6 +25,7 @@
 
 ## 📂 專案結構 (Directory Structure)
 
+```text
 .
 ├── decisions/          # 架構決策紀錄 (ADR)
 ├── kernel/             # Linux LKM 驅動原始碼
@@ -32,23 +33,24 @@
 │   └── src/            # mock_sensor.c (保命機制與虛擬硬體)
 └── user/               # Node.js 邊緣運算層
     └── adapter.js      # 系統資料聚合與 API 轉發
+```
 
 ## 🚀 快速啟動 (Getting Started)
 
 **1. 編譯與載入核心模組 (Kernel Space)**
-\`\`\`bash
+```bash
 cd kernel
 make
 sudo insmod src/mock_sensor.ko
 dmesg | tail # 驗證驅動是否存活
-\`\`\`
+```
 
 **2. 啟動邊緣聚合器 (User Space)**
-\`\`\`bash
+```bash
 cd user
 npm install
 sudo node adapter.js
-\`\`\`
+```
 
 ## 📜 架構決策紀錄 (ADR)
 詳細的系統設計與技術選型考量，請參閱：
